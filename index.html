@@ -10,8 +10,6 @@
   #root { width: 100%; max-width: 480px; }
   #boot { color: #c9bdf0; font-family: sans-serif; text-align: center; padding-top: 80px; }
 </style>
-
-<!-- React / lucide-react を読み込む地図（import map）。Babelより前に置く -->
 <script type="importmap">
 {
   "imports": {
@@ -21,14 +19,10 @@
   }
 }
 </script>
-
-<!-- JSXをブラウザで変換するBabel -->
 <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
 </head>
 <body>
   <div id="root"><div id="boot">よみこみ中…</div></div>
-
-  <!-- アプリ本体（JSX）。data-type="module" で import が使えるようにする -->
   <script type="text/babel" data-type="module" data-presets="react">
 import React, { useState, useEffect, useRef } from "react";
 import { Coins, Sparkles, Star, Heart, Lightbulb, ArrowRight, RefreshCw, Lock } from "lucide-react";
@@ -351,15 +345,19 @@ function makeChoices(answer) {
   return shuffle([...set].slice(0, 4));
 }
 
-/* ================= Claude API ================= */
+/* ================= AI（プロキシ経由）================= */
+/* 受付係（Cloudflare Worker）のURL。ここ1か所だけで定義する。 */
+const AI_PROXY_URL = "https://rinogical-ai.jet-speeder-herberty.workers.dev";
+
 async function callClaude(messages, system) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch(AI_PROXY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system, messages }),
+    body: JSON.stringify({ system: system, messages: messages }),
   });
   const data = await res.json();
-  return data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+  if (!res.ok || data.error) throw new Error(data.error || ("proxy " + res.status));
+  return data.text || "";
 }
 
 /* 先生キャラの名前は全フェーズ共通・変更不可。ここ1か所だけで定義する。 */
@@ -369,8 +367,10 @@ const EXPLAIN_SYSTEM =
   `あなたは中学1年生のための、やさしい数学の先生「${TEACHER}」です。` +
   "数式（すうしき）を操る魔法使いで、眼鏡（めがね）と杖（つえ）を持ち、数字が浮かぶローブを着ています。" +
   "魔法学校の先生らしく、たまに「呪文（じゅもん）」「魔法」などの言葉を少しだけ使ってワクワクさせます（使いすぎない）。" +
-  "解説スタイル：①短文で ②箇条書き中心 ③むずかしい漢字にはふりがな（例：符号（ふごう）） ④まず良いところを褒める ⑤絶対に責めない・否定しない。" +
-  "正負の数の単元。答えそのものより『考え方のステップ』を伝える。3〜5行以内。絵文字は1〜2個までOK。";
+  "解説スタイル：①短文で ②箇条書きは行頭に「・」だけを使う ③むずかしい漢字にはふりがな（例：符号（ふごう）） ④まず良いところを褒める ⑤絶対に責めない・否定しない。" +
+  "重要：マークダウン記号（** や * や # や ```）は絶対に使わない。強調したいときも記号で囲まない。" +
+  "正負の数の単元。答えそのものより『考え方のステップ』を伝える。絵文字は1〜2個までOK。" +
+  "毎回みじかく。長く書きすぎない。";
 
 async function genOyou(level) {
   const sys =
@@ -779,7 +779,7 @@ function Battle({ char, player, setPlayer, nickname, onWin, onHome }) {
     setExplaining(true);
     try {
       if (convo.current.length === 0) {
-        convo.current = [{ role: "user", content: `問題：${problem.q}　正解：${problem.a}。生徒（${nickname}）が間違えました。やさしく解説して。` }];
+        convo.current = [{ role: "user", content: `問題：${problem.q}　正解：${problem.a}。生徒が間違えました。まずは2〜3行だけ。やさしい励ましと、答えにつながる小さなヒントを1つだけ伝えて。くわしい手順はまだ書かないで。` }];
       } else if (extra) {
         convo.current.push({ role: "user", content: extra });
       }
@@ -872,8 +872,8 @@ function Battle({ char, player, setPlayer, nickname, onWin, onHome }) {
 
           {phase === "result" && picked !== problem.a && (
             <ExplainPanel explain={explain} explaining={explaining}
-              onWhy={() => fetchExplain("「なんで？」もっとくわしく、考え方のステップを教えて。")}
-              onEasier={() => fetchExplain("「もっとかんたんに」さらにやさしく、ちいさいステップに分けて。")}
+              onWhy={() => fetchExplain("「なんで？」と聞かれました。なぜその答えになるのか、考え方のステップを順番に、わかりやすく説明して。")}
+              onEasier={() => fetchExplain("「もっとかんたんに」と言われました。これまでとは別の、身近なたとえ（温度計・エレベーターの階・おこづかいの貸し借りなど）を1つだけ使って、いちばんやさしく説明して。同じ説明のくり返しは避けて。")}
               onNext={nextProblem} />
           )}
         </div>
